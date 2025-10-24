@@ -2,35 +2,40 @@
 #include <string>
 
 namespace sjtu {
-int2048::int2048() {
-    vals_ = std::vector<int>(1, 0);
-    sign_bit_ = 1;
-}
+
+// ============================================================================
+// Constructors and Destructor
+// ============================================================================
+
+int2048::int2048() : vals_(1, 0), sign_bit_(1) {}
+
 int2048::int2048(long long x) {
     if (x == 0) {
         vals_ = std::vector<int>(1, 0);
         sign_bit_ = 1;
         return;
     }
+    
     vals_.clear();
-    sign_bit_ = 1;
+    sign_bit_ = (x > 0) ? 1 : -1;
     if (x < 0) {
         x = -x;
-        sign_bit_ = -1;
     }
-    vals_.reserve(std::log10(x) / kLEN + 1);
-    while (x) {
+    
+    // Reserve space for efficiency
+    vals_.reserve(static_cast<int>(std::log10(x) / kLEN) + 1);
+    while (x > 0) {
         vals_.emplace_back(x % kBASE);
         x /= kBASE;
     }
 }
+
 int2048::int2048(const std::string &s) {
     read(s);
 }
-int2048::int2048(const int2048 &x) {
-    vals_ = x.vals_;
-    sign_bit_ = x.sign_bit_;
-}
+
+int2048::int2048(const int2048 &x) : vals_(x.vals_), sign_bit_(x.sign_bit_) {}
+
 int2048::int2048(const poly &a) {
     *this = to_int2048(a);
 }
@@ -40,64 +45,95 @@ int2048::~int2048() {
     vals_.shrink_to_fit();
 }
 
+// ============================================================================
+// Type Conversion Operators
+// ============================================================================
+
 int2048::operator double() const {
-    double res = 0;
-    for (int i = len() - 1; i >= 0; i--) {
-        res *= kBASE;
-        res += vals_[i];
+    double result = 0.0;
+    for (int i = len() - 1; i >= 0; --i) {
+        result *= kBASE;
+        result += vals_[i];
     }
-    res *= sign_bit_;
-    return res;
+    return result * sign_bit_;
 }
 
 int2048::operator std::string() const {
-    std::string s = "";
-    if ((*this) == int2048(0)) {
+    // Handle zero case
+    if (*this == int2048(0)) {
         return "0";
     }
+    
+    std::string s;
     if (sign_bit_ == -1) {
         s = "-";
     }
+    
+    // Add the most significant digit without leading zeros
     s += std::to_string(vals_.back());
-    for (int i = len() - 2; i >= 0; i--) {
-        std::string t = std::to_string(vals_[i]);
-        while (t.size() < kLEN) {
-            t = "0" + t;
-        }
-        s += t;
+    
+    // Add remaining digits with leading zeros
+    for (int i = len() - 2; i >= 0; --i) {
+        std::string digit = std::to_string(vals_[i]);
+        s += std::string(kLEN - digit.size(), '0') + digit;
     }
+    
     return s;
 }
 
+// ============================================================================
+// Input/Output Functions
+// ============================================================================
+
 void int2048::read(const std::string &s) {
-    int lowbit = 0;
-    if (s[0] == '-') {
+    int start_pos = 0;
+    
+    // Handle sign
+    if (!s.empty() && s[0] == '-') {
         sign_bit_ = -1;
-        lowbit = 1;
+        start_pos = 1;
     } else {
         sign_bit_ = 1;
     }
+    
     vals_.clear();
-    vals_.reserve(s.size() / kLEN + 1);
-    for (int i = static_cast<int>(s.size()) - 1; i >= lowbit; i -= kLEN) {
-        int res = 0;
-        for (int j = std::min(kLEN, i + 1 - lowbit) - 1; j >= 0; j--) {
-            res = res * 10 + (s[i - j] - '0');
+    vals_.reserve((s.size() - start_pos) / kLEN + 1);
+    
+    // Read digits from right to left in chunks of kLEN
+    for (int i = static_cast<int>(s.size()) - 1; i >= start_pos; i -= kLEN) {
+        int chunk = 0;
+        int chunk_len = std::min(kLEN, i + 1 - start_pos);
+        for (int j = chunk_len - 1; j >= 0; --j) {
+            chunk = chunk * 10 + (s[i - j] - '0');
         }
-        vals_.emplace_back(res);
+        vals_.emplace_back(chunk);
     }
+    
+    // Remove leading zeros
     while (vals_.size() > 1 && vals_.back() == 0) {
         vals_.pop_back();
     }
 }
+
 void int2048::print() {
     std::cout << (*this);
 }
 
+// ============================================================================
+// Addition and Subtraction Helper Functions
+// ============================================================================
+
 int2048 add(int2048, const int2048 &);
 int2048 minus(int2048, const int2048 &);
 
-int2048 add(int2048 a, const int2048 & b) {
+/**
+ * Add two big integers (handles both positive and negative numbers)
+ * @param a First operand (passed by value for modification)
+ * @param b Second operand (const reference)
+ * @return Sum of a and b
+ */
+int2048 add(int2048 a, const int2048 &b) {
+    // Handle negative numbers by converting to subtraction
     if (a.sign_bit_ == -1 && b.sign_bit_ == -1) {
         return -add(-a, -b);
     } else if (b.sign_bit_ == -1) {
@@ -105,27 +141,42 @@ int2048 add(int2048 a, const int2048 & b) {
     } else if (a.sign_bit_ == -1) {
         return minus(b, -a);
     }
+    
+    // Both numbers are positive
     int maxlen = std::max(a.vals_.size(), b.vals_.size());
     a.vals_.resize(maxlen + 1);
-    bool carry = 0;
-    for (int i = 0; i < static_cast<int>(b.vals_.size()) || carry; i++) {
+    
+    bool carry = false;
+    for (int i = 0; i < static_cast<int>(b.vals_.size()) || carry; ++i) {
         if (i < static_cast<int>(b.vals_.size())) {
             a.vals_[i] += b.vals_[i];
         }
+        
         if (a.vals_[i] >= kBASE) {
             a.vals_[i + 1]++;
             a.vals_[i] -= kBASE;
-            carry = 1;
+            carry = true;
         } else {
-            carry = 0;
+            carry = false;
         }
     }
+    
+    // Remove leading zeros
     while (a.vals_.size() > 1 && a.vals_.back() == 0) {
         a.vals_.pop_back();
     }
+    
     return a;
 }
+
+/**
+ * Subtract two big integers (handles both positive and negative numbers)
+ * @param a First operand (passed by value for modification)
+ * @param b Second operand (const reference)
+ * @return Difference of a and b
+ */
 int2048 minus(int2048 a, const int2048 &b) {
+    // Handle negative numbers by converting to addition
     if (a.sign_bit_ == -1 && b.sign_bit_ == -1) {
         return minus(-b, -a);
     } else if (a.sign_bit_ == -1) {
@@ -133,65 +184,96 @@ int2048 minus(int2048 a, const int2048 &b) {
     } else if (b.sign_bit_ == -1) {
         return add(a, -b);
     }
+    
+    // Ensure a >= b for positive subtraction
     if (a < b) {
         return -minus(b, a);
     }
+    
     a.vals_.resize(a.vals_.size() + 1);
-    bool carry = 0;
-    for (int i = 0; i < static_cast<int>(b.vals_.size()) || carry; i++) {
+    
+    bool borrow = false;
+    for (int i = 0; i < static_cast<int>(b.vals_.size()) || borrow; ++i) {
         if (i < static_cast<int>(b.vals_.size())) {
             a.vals_[i] -= b.vals_[i];
         }
+        
         if (a.vals_[i] < 0) {
             a.vals_[i] += kBASE;
             a.vals_[i + 1]--;
-            carry = 1;
+            borrow = true;
         } else {
-            carry = 0;
+            borrow = false;
         }
     }
+    
+    // Remove leading zeros
     while (a.vals_.size() > 1 && a.vals_.back() == 0) {
         a.vals_.pop_back();
     }
+    
     return a;
 }
+
+// ============================================================================
+// Member Function Implementations for Addition/Subtraction
+// ============================================================================
 
 int2048 &int2048::add(const int2048 &b) {
     *this = sjtu::add(*this, b);
     return *this;
 }
+
 int2048 &int2048::minus(const int2048 &b) {
     *this = sjtu::minus(*this, b);
     return *this;
 }
 
+// ============================================================================
+// Unary Operators
+// ============================================================================
+
 int2048 int2048::operator+() const {
     return *this;
 }
+
 int2048 int2048::operator-() const {
-    int2048 ans = *this;
-    ans.sign_bit_ = -ans.sign_bit_;
-    return ans;
+    int2048 result = *this;
+    result.sign_bit_ = -result.sign_bit_;
+    return result;
 }
 
+// ============================================================================
+// Assignment and Arithmetic Operators
+// ============================================================================
+
 int2048 &int2048::operator=(const int2048 &b) {
-    (*this).vals_ = b.vals_;
-    (*this).sign_bit_ = b.sign_bit_;
+    if (this != &b) {
+        vals_ = b.vals_;
+        sign_bit_ = b.sign_bit_;
+    }
     return *this;
 }
 
 int2048 operator+(int2048 a, const int2048 &b) {
     return add(a, b);
 }
+
 int2048 &int2048::operator+=(const int2048 &b) {
     return add(b);
 }
+
 int2048 operator-(int2048 a, const int2048 &b) {
     return minus(a, b);
 }
+
 int2048 &int2048::operator-=(const int2048 &b) {
     return minus(b);
 }
+
+// ============================================================================
+// Stream Operators
+// ============================================================================
 
 std::istream &operator>>(std::istream &in, int2048 &a) {
     std::string s;
@@ -199,321 +281,540 @@ std::istream &operator>>(std::istream &in, int2048 &a) {
     a = int2048(s);
     return in;
 }
-// @warning: RELY ON kBASE AND kLEN!!!!
+
+/**
+ * Output operator for int2048
+ * WARNING: This implementation depends on kBASE and kLEN constants!
+ * kBASE must be 1000 and kLEN must be 3 for proper zero-padding
+ */
 std::ostream &operator<<(std::ostream &out, const int2048 &a) {
+    // Print negative sign for non-zero negative numbers
     if (a.sign_bit_ == -1 && (a.vals_.size() > 1 || a.vals_[0] != 0)) {
         out << '-';
     }
-    for (int i = static_cast<int>(a.vals_.size()) - 1; i >= 0; i--) {
+    
+    // Print digits from most significant to least significant
+    for (int i = static_cast<int>(a.vals_.size()) - 1; i >= 0; --i) {
         if (i == static_cast<int>(a.vals_.size()) - 1) {
+            // Most significant digit: no leading zeros
             out << a.vals_[i];
-            continue;
-        }
-        if (a.vals_[i] >= 100) {
-            out << a.vals_[i];
-        } else if (a.vals_[i] >= 10) {
-            out << "0" << a.vals_[i];
         } else {
-            out << "00" << a.vals_[i];
+            // Other digits: pad with zeros to kLEN digits
+            if (a.vals_[i] >= 100) {
+                out << a.vals_[i];
+            } else if (a.vals_[i] >= 10) {
+                out << '0' << a.vals_[i];
+            } else {
+                out << "00" << a.vals_[i];
+            }
         }
     }
+    
     return out;
 }
 
+// ============================================================================
+// Comparison Operators
+// ============================================================================
+
 bool operator==(const int2048 &a, const int2048 &b) {
-    if (a.vals_.size() == 1 && a.vals_.back() == 0 && b.vals_.size() == 1 && b.vals_.back() == 0) {
+    // Both are zero
+    if (a.vals_.size() == 1 && a.vals_[0] == 0 && 
+        b.vals_.size() == 1 && b.vals_[0] == 0) {
         return true;
     }
+    
+    // Different signs
     if (a.sign_bit_ != b.sign_bit_) {
         return false;
     }
+    
+    // Different lengths
     if (a.vals_.size() != b.vals_.size()) {
         return false;
     }
-    for (int i = static_cast<int>(a.vals_.size()) - 1; i >= 0; i--) {
+    
+    // Compare digit by digit
+    for (int i = static_cast<int>(a.vals_.size()) - 1; i >= 0; --i) {
         if (a.vals_[i] != b.vals_[i]) {
             return false;
         }
     }
+    
     return true;
 }
+
 bool operator!=(const int2048 &a, const int2048 &b) {
     return !(a == b);
 }
+
 bool operator<=(const int2048 &a, const int2048 &b) {
+    // Both are zero
     if (a == int2048(0) && b == int2048(0)) {
         return true;
     }
+    
+    // Both negative: reverse comparison of absolute values
     if (a.sign_bit_ == -1 && b.sign_bit_ == -1) {
-        return ((-a) >= (-b));
+        return (-a) >= (-b);
     }
+    
+    // Different signs: negative < positive
     if (a.sign_bit_ != b.sign_bit_) {
         return a.sign_bit_ < b.sign_bit_;
     }
+    
+    // Same sign, different lengths
     if (a.vals_.size() != b.vals_.size()) {
         return a.vals_.size() < b.vals_.size();
     }
-    for (int i = static_cast<int>(a.vals_.size()) - 1; i >= 0; i--) {
+    
+    // Same sign and length: compare digit by digit
+    for (int i = static_cast<int>(a.vals_.size()) - 1; i >= 0; --i) {
         if (a.vals_[i] > b.vals_[i]) {
             return false;
         } else if (a.vals_[i] < b.vals_[i]) {
             return true;
         }
     }
+    
     return true;
 }
+
 bool operator>=(const int2048 &a, const int2048 &b) {
+    // Both are zero
     if (a == int2048(0) && b == int2048(0)) {
         return true;
     }
+    
+    // Both negative: reverse comparison of absolute values
     if (a.sign_bit_ == -1 && b.sign_bit_ == -1) {
-        return ((-a) <= (-b));
+        return (-a) <= (-b);
     }
+    
+    // Different signs: positive > negative
     if (a.sign_bit_ != b.sign_bit_) {
         return a.sign_bit_ > b.sign_bit_;
     }
+    
+    // Same sign, different lengths
     if (a.vals_.size() != b.vals_.size()) {
         return a.vals_.size() > b.vals_.size();
     }
-    for (int i = static_cast<int>(a.vals_.size()) - 1; i >= 0; i--) {
+    
+    // Same sign and length: compare digit by digit
+    for (int i = static_cast<int>(a.vals_.size()) - 1; i >= 0; --i) {
         if (a.vals_[i] < b.vals_[i]) {
             return false;
         } else if (a.vals_[i] > b.vals_[i]) {
             return true;
         }
     }
+    
     return true;
 }
+
 bool operator<(const int2048 &a, const int2048 &b) {
     return !(a >= b);
 }
+
 bool operator>(const int2048 &a, const int2048 &b) {
     return !(a <= b);
 }
 
+// ============================================================================
+// Polynomial Conversion (for FFT multiplication)
+// ============================================================================
+
 constexpr double eps = 1e-7;
 
 poly int2048::to_poly() const {
-    poly ans;
-    ans.reserve(vals_.size());
+    poly result;
+    result.reserve(vals_.size());
+    
     for (int x : vals_) {
-        ans.push_back(x);
+        result.push_back(x);
     }
-    while (ans.size() > 1 && std::abs(ans.back().real()) < eps) {
-        ans.pop_back();
+    
+    // Remove trailing zeros
+    while (result.size() > 1 && std::abs(result.back().real()) < eps) {
+        result.pop_back();
     }
-    return ans;
+    
+    return result;
 }
+
 int2048 int2048::to_int2048(const poly &a) const {
-    std::vector<long long> res(a.size() + 1);
-    for (int i = 0; i < static_cast<int>(a.size()); i++) {
-        res[i] += static_cast<long long>(a[i].imag() / 2 + 0.5);
-        res[i + 1] += res[i] / kBASE;
-        res[i] %= kBASE;
+    std::vector<long long> temp(a.size() + 1);
+    
+    // Convert complex numbers to integers with carry handling
+    for (int i = 0; i < static_cast<int>(a.size()); ++i) {
+        temp[i] += static_cast<long long>(a[i].imag() / 2.0 + 0.5);
+        temp[i + 1] += temp[i] / kBASE;
+        temp[i] %= kBASE;
     }
-    while (res.size() > 1 && res.back() == 0) {
-        res.pop_back();
+    
+    // Remove leading zeros
+    while (temp.size() > 1 && temp.back() == 0) {
+        temp.pop_back();
     }
-    int2048 ans;
-    ans.vals_.clear();
-    ans.vals_.reserve(res.size());
-    for (auto x : res) {
-        ans.vals_.push_back(x);
+    
+    // Convert to int2048
+    int2048 result;
+    result.vals_.clear();
+    result.vals_.reserve(temp.size());
+    
+    for (long long x : temp) {
+        result.vals_.push_back(static_cast<int>(x));
     }
-    while (ans.vals_.size() > 1 && ans.vals_.back() == 0) {
-        ans.vals_.pop_back();
+    
+    // Remove any remaining leading zeros
+    while (result.vals_.size() > 1 && result.vals_.back() == 0) {
+        result.vals_.pop_back();
     }
-    return ans;
+    
+    return result;
 }
+
+// ============================================================================
+// Fast Fourier Transform (FFT) for Polynomial Multiplication
+// ============================================================================
 
 namespace polymul {
-// high-memory-low-time version
-const double kPI = acos(-1);
 
-std::vector<int> rev;
-int history_max_len = 1;
-std::vector<Complex> pww[35][2];
+// High-memory, low-time complexity version
+const double kPI = acos(-1.0);
 
+std::vector<int> rev;                // Bit-reversal permutation array
+int history_max_len = 1;             // Track maximum initialized length
+std::vector<Complex> pww[35][2];     // Pre-computed roots of unity
 
-// butterfly transform
+/**
+ * Initialize butterfly transform for FFT
+ * Pre-computes bit-reversal permutation and roots of unity
+ * @param k Log2 of the transform length
+ */
 void init(int k) {
     int len = 1 << k;
+    
     if (len > history_max_len) {
         rev.resize(len);
+        
+        // Pre-compute roots of unity for different levels
         for (int i = history_max_len; i < len; i <<= 1) {
-            int t = std::log2(i);
+            int t = static_cast<int>(std::log2(i));
+            
+            // Forward transform roots
             Complex wn = exp(Complex(0, kPI / i));
             pww[t][0].resize(i);
             pww[t][0][0] = Complex(1, 0);
-            for (int j = 1; j < i; j++)
+            for (int j = 1; j < i; ++j) {
                 pww[t][0][j] = pww[t][0][j - 1] * wn;
-
-            wn = exp(Complex(0, -1 * kPI / i));
+            }
+            
+            // Inverse transform roots
+            wn = exp(Complex(0, -kPI / i));
             pww[t][1].resize(i);
             pww[t][1][0] = Complex(1, 0);
-            for (int j = 1; j < i; j++)
+            for (int j = 1; j < i; ++j) {
                 pww[t][1][j] = pww[t][1][j - 1] * wn;
+            }
         }
+        
         history_max_len = len;
     }
-    for (int i = 0; i < len; i++) {
+    
+    // Compute bit-reversal permutation
+    for (int i = 0; i < len; ++i) {
         rev[i] = (rev[i >> 1] >> 1) | ((i & 1) << (k - 1));
     }
 }
 
+/**
+ * Fast Fourier Transform
+ * @param a Polynomial coefficients (modified in-place)
+ * @param n Length of the transform (must be a power of 2)
+ * @param inv 1 for forward transform, -1 for inverse transform
+ */
 void FFT(poly &a, int n, int inv) {
-    for (int i = 0; i < n; i++) {
+    // Bit-reversal permutation
+    for (int i = 0; i < n; ++i) {
         if (i < rev[i]) {
             std::swap(a[i], a[rev[i]]);
         }
     }
+    
+    // Cooley-Tukey butterfly operations
     for (int mid = 1; mid < n; mid <<= 1) {
-        int t = std::log2(mid);
+        int t = static_cast<int>(std::log2(mid));
         for (int i = 0; i < n; i += (mid << 1)) {
-            for (int j = 0; j < mid; j++) {
-                Complex x = a[i + j], y = pww[t][(inv == 1) ? 0 : 1][j] * a[i + j + mid];
-                a[i + j] = x + y, a[i + j + mid] = x - y;
+            for (int j = 0; j < mid; ++j) {
+                Complex x = a[i + j];
+                Complex y = pww[t][(inv == 1) ? 0 : 1][j] * a[i + j + mid];
+                a[i + j] = x + y;
+                a[i + j + mid] = x - y;
             }
         }
     }
+    
+    // Normalize for inverse transform
     if (inv == -1) {
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < n; ++i) {
             a[i] /= n;
         }
     }
 }
 
+/**
+ * Multiply two polynomials using FFT
+ * @param a First polynomial
+ * @param b Second polynomial
+ * @return Product polynomial
+ */
 poly mul(poly a, poly b) {
     int maxlen = std::max(a.size(), b.size());
     int bit = 1, len = 2;
+    
+    // Find smallest power of 2 >= 2*maxlen - 1
     while ((1 << bit) < 2 * maxlen - 1) {
         bit++;
         len <<= 1;
     }
+    
     init(bit);
-    a.resize(len), b.resize(len);
-    for (int i = 0; i < len; i++) {
-        a[i] = {a[i].real(), b[i].real()};
+    a.resize(len);
+    b.resize(len);
+    
+    // Combine a and b into complex numbers for efficiency
+    for (int i = 0; i < len; ++i) {
+        a[i] = Complex(a[i].real(), b[i].real());
     }
+    
     FFT(a, len, 1);
-    for (int i = 0; i < len; i++) {
+    
+    // Point-wise multiplication
+    for (int i = 0; i < len; ++i) {
         a[i] = a[i] * a[i];
     }
+    
     FFT(a, len, -1);
+    
     return a;
 }
-}
+
+}  // namespace polymul
+
+// ============================================================================
+// Multiplication Operators
+// ============================================================================
 
 int2048 operator*(int2048 a, const int2048 &b) {
-    auto A = a.to_poly(), B = b.to_poly();
-    auto ans = int2048(polymul::mul(A, B));
-    ans.sign_bit_ = (a.sign_bit_ == b.sign_bit_ ? 1 : -1);
-    return ans;
+    // Convert to polynomials and multiply using FFT
+    auto poly_a = a.to_poly();
+    auto poly_b = b.to_poly();
+    auto result = int2048(polymul::mul(poly_a, poly_b));
+    
+    // Set sign: positive if same sign, negative if different
+    result.sign_bit_ = (a.sign_bit_ == b.sign_bit_) ? 1 : -1;
+    
+    return result;
 }
+
 int2048 &int2048::operator*=(const int2048 &b) {
     *this = (*this) * b;
     return *this;
 }
 
+// ============================================================================
+// Bit Shift Operations (Base-10 shifts)
+// ============================================================================
+
 int2048 &int2048::left_shift(const int k) {
+    if (k <= 0) {
+        return *this;
+    }
+    
     vals_.resize(vals_.size() + k);
-    for (int i = static_cast<int>(vals_.size()) - 1; i >= k; i--) {
+    
+    // Shift digits to the left
+    for (int i = static_cast<int>(vals_.size()) - 1; i >= k; --i) {
         vals_[i] = vals_[i - k];
     }
-    for (int i = 0; i < k; i++) {
+    
+    // Fill with zeros
+    for (int i = 0; i < k; ++i) {
         vals_[i] = 0;
     }
-    return *this;
-}
-int2048 &int2048::right_shift(const int k) {
-    if (k > static_cast<int>(vals_.size())) {
-        return ((*this) = 0);
-    }
-    for (int i = k; i < static_cast<int>(vals_.size()); i++) {
-        vals_[i - k] = vals_[i];
-    }
-    for (int i = 0; i < k; i++) {
-        vals_.pop_back();
-    }
+    
     return *this;
 }
 
+int2048 &int2048::right_shift(const int k) {
+    if (k <= 0) {
+        return *this;
+    }
+    
+    if (k >= static_cast<int>(vals_.size())) {
+        return (*this = 0);
+    }
+    
+    // Shift digits to the right
+    for (int i = k; i < static_cast<int>(vals_.size()); ++i) {
+        vals_[i - k] = vals_[i];
+    }
+    
+    // Remove shifted digits
+    for (int i = 0; i < k; ++i) {
+        vals_.pop_back();
+    }
+    
+    return *this;
+}
+
+// ============================================================================
+// Division Helper Functions
+// ============================================================================
+
+/**
+ * Brute force division using binary search/doubling
+ * Used as base case for Newton's method
+ * @param a Dividend
+ * @param b Divisor
+ * @return Quotient of a / b
+ */
 int2048 force_div(const int2048 &a, const int2048 &b) {
     if (a < b) {
         return 0;
     }
-    int2048 ans = 0;
-    std::vector<int2048> sums, cnts;
-    sums.reserve(std::log2(a.len() - b.len() + 1) + 2);
-    int2048 pw_sum = b, pw_cnt = 1;
-    while (pw_sum <= a) {
-        sums.emplace_back(pw_sum);
-        cnts.emplace_back(pw_cnt);
-        pw_sum += pw_sum;
-        pw_cnt += pw_cnt;
+    
+    int2048 quotient = 0;
+    std::vector<int2048> sums, counts;
+    
+    sums.reserve(static_cast<int>(std::log2(a.len() - b.len() + 1)) + 2);
+    
+    // Build powers of b: b, 2b, 4b, 8b, ...
+    int2048 power_sum = b;
+    int2048 power_count = 1;
+    
+    while (power_sum <= a) {
+        sums.emplace_back(power_sum);
+        counts.emplace_back(power_count);
+        power_sum += power_sum;
+        power_count += power_count;
     }
-    int2048 tmp = a;
+    
+    // Greedily subtract largest powers
+    int2048 remainder = a;
     while (!sums.empty()) {
-        if (sums.back() <= tmp) {
-            tmp -= sums.back();
-            ans += cnts.back();
+        if (sums.back() <= remainder) {
+            remainder -= sums.back();
+            quotient += counts.back();
         }
         sums.pop_back();
-        cnts.pop_back();
+        counts.pop_back();
     }
-    return ans;
+    
+    return quotient;
 }
+
+/**
+ * Newton's method to compute reciprocal: 10^{2m} / b
+ * Uses Newton iteration: x_{n+1} = 2*x_n - b*x_n^2
+ * @param b Divisor
+ * @return Approximation of 10^{2m} / b
+ */
 int2048 newton_inv(const int2048 &b) {
+    // Base case: use brute force for small numbers
     if (b.len() <= kLEN * 10) {
-        int2048 t = 1;
-        t.left_shift(2 * b.len());
-        auto res = force_div(t, b);
-        return res;
+        int2048 numerator = 1;
+        numerator.left_shift(2 * b.len());
+        return force_div(numerator, b);
     }
+    
     int m = b.len();
     int k = (m + 1) / 2 + 2;
-    int2048 bb = b;
-    bb.right_shift(m - k);
-    auto cc = newton_inv(bb);
-    auto ans = (int2048(2) * cc).left_shift(m - k) - (b * cc * cc).right_shift(2 * k);
-    int2048 t = 1;
-    t.left_shift(2 * m);
-    if (t <= ans * b) {
-        ans -= 1;
+    
+    // Recursively compute inverse of truncated b
+    int2048 b_truncated = b;
+    b_truncated.right_shift(m - k);
+    
+    auto inverse_approx = newton_inv(b_truncated);
+    
+    // Newton iteration step
+    auto result = (int2048(2) * inverse_approx).left_shift(m - k) - 
+                  (b * inverse_approx * inverse_approx).right_shift(2 * k);
+    
+    // Correction step
+    int2048 numerator = 1;
+    numerator.left_shift(2 * m);
+    if (numerator <= result * b) {
+        result -= 1;
     }
-    return ans;
+    
+    return result;
 }
+
+/**
+ * Division using Newton's method for reciprocal
+ * Computes a / b by first finding 1/b, then multiplying
+ * @param a Dividend
+ * @param b Divisor
+ * @return Quotient of a / b
+ */
 int2048 div(int2048 a, int2048 b) {
     if (a < b) {
         return 0;
     }
-    int n = a.len(), m = b.len();
+    
+    int n = a.len();
+    int m = b.len();
+    
+    // Normalize if a is much larger than b
     if (n > 2 * m) {
         a.left_shift(n - 2 * m);
         b.left_shift(n - 2 * m);
         n = a.len();
         m = b.len();
     }
-    int2048 t = 1;
-    t.left_shift(n);
-    auto binv = newton_inv(b);
-    binv.right_shift(2 * m - n);
-    auto ans = a * binv;
-    ans.right_shift(n);
-    if (a >= (ans + int2048(1)) * b) {
-        ans += 1;
+    
+    // Compute reciprocal of b
+    int2048 numerator = 1;
+    numerator.left_shift(n);
+    
+    auto b_inverse = newton_inv(b);
+    b_inverse.right_shift(2 * m - n);
+    
+    // Multiply a by reciprocal of b
+    auto quotient = a * b_inverse;
+    quotient.right_shift(n);
+    
+    // Correction step
+    if (a >= (quotient + int2048(1)) * b) {
+        quotient += 1;
     }
-    return ans;
+    
+    return quotient;
 }
+
+// ============================================================================
+// Division and Modulo Operators
+// ============================================================================
 
 int2048 &int2048::operator/=(const int2048 &a) {
     *this = (*this) / a;
     return *this;
 }
+
+/**
+ * Division operator with sign handling
+ * Implements floor division (rounds towards negative infinity)
+ */
 int2048 operator/(int2048 a, const int2048 &b) {
     if (a == int2048(0)) {
         return 0;
     }
+    
+    // Same sign: both positive or both negative
     if (a.sign_bit_ == b.sign_bit_) {
         if (a.sign_bit_ == -1) {
             return div(-a, -b);
@@ -521,20 +822,23 @@ int2048 operator/(int2048 a, const int2048 &b) {
             return div(a, b);
         }
     }
+    // Different signs: implement floor division
     else {
         if (a.sign_bit_ == -1) {
-            auto t = div(-a, b);
-            if ((-a) == b * t) {
-                return -t;
+            // Negative dividend, positive divisor
+            auto quotient = div(-a, b);
+            if ((-a) == b * quotient) {
+                return -quotient;
             } else {
-                return -(t + int2048(1));
+                return -(quotient + int2048(1));
             }
         } else {
-            auto t = div(a, -b);
-            if (a == (-b) * t) {
-                return -t;
+            // Positive dividend, negative divisor
+            auto quotient = div(a, -b);
+            if (a == (-b) * quotient) {
+                return -quotient;
             } else {
-                return -(t + int2048(1));
+                return -(quotient + int2048(1));
             }
         }
     }
@@ -544,12 +848,21 @@ int2048 &int2048::operator%=(const int2048 &a) {
     *this = (*this) % a;
     return *this;
 }
+
+/**
+ * Modulo operator
+ * Computes remainder: a - (a / b) * b
+ */
 int2048 operator%(int2048 a, const int2048 &b) {
     return a - (a / b) * b;
 }
 
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
 int int2048::len() const {
-    return vals_.size();
+    return static_cast<int>(vals_.size());
 }
 
-} // namespace sjtu
+}  // namespace sjtu
